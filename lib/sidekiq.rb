@@ -61,20 +61,54 @@ module Sidekiq
     defined?(Sidekiq::CLI)
   end
 
-  def self.redis(&block)
+  def self.redis(fetcher = nil, &block)
     raise ArgumentError, "requires a block" if !block
-    @redis ||= Sidekiq::RedisConnection.create(@hash || {})
-    @redis.with(&block)
+
+    if @hashes
+      @redis ||= {}
+
+      if fetcher
+        if @redis[fetcher].nil?
+          if config_hash = @hashes.select { |h| h[:fetcher].nil? }.shift
+            @redis[fetcher] = Sidekiq::RedisConnection.create(config_hash)
+            config_hash[:fetcher] = fetcher
+          end
+        end
+        @redis[fetcher].with(&block)
+      else
+        @fallback ||= Sidekiq::RedisConnection.create(@hashes.first || {})
+        @fallback.with(&block)
+      end
+
+    else
+      @redis ||= Sidekiq::RedisConnection.create(@hash || {})
+      @redis.with(&block)
+    end
   end
 
-  def self.redis=(hash)
-    return @redis = hash if hash.is_a?(ConnectionPool)
+  def self.redis=(arg)
+    return @redis = arg if arg.is_a?(ConnectionPool)
 
-    if hash.is_a?(Hash)
-      @hash = hash
+    case arg
+    when Hash
+      @hash = arg
+    when Array
+      @hashes = arg
     else
-      raise ArgumentError, "redis= requires a Hash or ConnectionPool"
+      raise ArgumentError, "redis= requires an Array, Hash, or ConnectionPool"
     end
+  end
+
+  def self.multi_redis?
+    !!@hashes
+  end
+
+  def self.fetcher_class
+    Sidekiq.multi_redis? ? Sidekiq::FetcherPool : Sidekiq::Fetcher
+  end
+
+  def self.fetcher_pool_count
+    @hashes.nil? ? 1 : @hashes.length
   end
 
   def self.client_middleware

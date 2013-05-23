@@ -15,7 +15,7 @@ module Sidekiq
     def initialize(mgr, options)
       @down = nil
       @mgr = mgr
-      @strategy = Fetcher.strategy.new(options)
+      @strategy = Fetcher.strategy.new(options.merge :fetcher => self)
     end
 
     # Fetching is straightforward: the Manager makes a fetch
@@ -98,7 +98,7 @@ module Sidekiq
         jobs_to_requeue[unit_of_work.queue_name] << unit_of_work.message
       end
 
-      Sidekiq.redis do |conn|
+      Sidekiq.redis(@fetcher) do |conn|
         jobs_to_requeue.each do |queue, jobs|
           conn.rpush("queue:#{queue}", jobs)
         end
@@ -133,5 +133,63 @@ module Sidekiq
       queues = @strictly_ordered_queues ? @unique_queues.dup : @queues.shuffle.uniq
       queues << Sidekiq::Fetcher::TIMEOUT
     end
+  end
+
+  class MultiFetch < BasicFetch
+
+    def retrieve_work
+      work = Sidekiq.redis(Celluloid::Actor.current) do |conn|
+        conn.brpop(*queues_cmd)
+      end
+      UnitOfWork.new(*work) if work
+    end
+
+  end
+
+  class FetcherPool
+
+    attr_reader :pool
+
+    def initialize(mgr, options)
+      options.merge!(:fetch => MultiFetch)
+      @pool = Sidekiq.fetcher_pool_count.times.map do
+        f = Fetcher.new(mgr, options)
+
+        # make the redis connections now to avoid awkwardness later
+        #
+        Sidekiq.redis(f) { nil }
+
+        f
+      end
+    end
+
+    # hand off normal celluloid +async+ calls to the "proxy"
+    #
+    def async
+      @async_handler ||= AsyncHandler.new(@pool)
+    end
+
+    # disseminating *synchronous* orders
+    #
+    def method_missing(meth, *args, &block)
+      @pool.each { |fetcher| fetcher.__send__(meth, *args, &block) }
+    end
+
+    # quick proxy class to disseminate asynchronous orders to fetchers
+    #
+    class AsyncHandler
+
+      def initialize(pool)
+        @pool = pool
+      end
+
+      # disseminating *asynchronous* orders...
+      #
+      def method_missing(meth, *args, &block)
+        @pool.each { |fetcher| fetcher.async.__send__(meth, *args, &block) }
+      end
+
+    end
+
   end
 end

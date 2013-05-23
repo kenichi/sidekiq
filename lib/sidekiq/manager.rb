@@ -28,6 +28,7 @@ module Sidekiq
       @threads = {}
       @done = false
       @busy = []
+      @fetcher = Sidekiq.fetcher_class.new(current_actor, options)
       @ready = @count.times.map do
         p = Processor.new_link(current_actor)
         p.proxy_id = p.object_id
@@ -41,6 +42,8 @@ module Sidekiq
         timeout = options[:timeout]
 
         @done = true
+        Fetcher.done!
+        @fetcher.async.terminate if @fetcher.alive?
 
         logger.info { "Shutting down #{@ready.size} quiet workers" }
         @ready.each { |x| x.terminate if x.alive? }
@@ -157,7 +160,7 @@ module Sidekiq
           # contract says that jobs are run AT LEAST once. Process termination
           # is delayed until we're certain the jobs are back in Redis because
           # it is worse to lose a job than to run it twice.
-          Sidekiq::Fetcher.strategy.bulk_requeue(@in_progress.values)
+          Sidekiq.fetcher_class.strategy.bulk_requeue(@in_progress.values)
 
           logger.debug { "Terminating #{@busy.size} busy worker threads" }
           @busy.each do |processor|

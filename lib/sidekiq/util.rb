@@ -22,8 +22,8 @@ module Sidekiq
       Sidekiq.logger
     end
 
-    def redis(&block)
-      Sidekiq.redis(&block)
+    def redis(fetcher = nil, &block)
+      Sidekiq.redis(fetcher, &block)
     end
 
     def process_id
