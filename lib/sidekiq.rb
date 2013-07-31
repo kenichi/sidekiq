@@ -65,16 +65,16 @@ module Sidekiq
     raise ArgumentError, "requires a block" if !block
 
     if @hashes
-      @redis ||= {}
+      @multi_redis ||= {}
 
       if fetcher
-        if @redis[fetcher].nil?
+        if @multi_redis[fetcher].nil?
           if config_hash = @hashes.select { |h| h[:fetcher].nil? }.shift
-            @redis[fetcher] = Sidekiq::RedisConnection.create(config_hash)
+            @multi_redis[fetcher] = Sidekiq::RedisConnection.create(config_hash)
             config_hash[:fetcher] = fetcher
           end
         end
-        @redis[fetcher].with(&block)
+        @multi_redis[fetcher].with(&block)
       else
         @fallback ||= Sidekiq::RedisConnection.create(@hashes.first || {})
         @fallback.with(&block)

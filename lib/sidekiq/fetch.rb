@@ -137,8 +137,8 @@ module Sidekiq
 
   class MultiFetch < BasicFetch
 
-    def retrieve_work
-      work = Sidekiq.redis(Celluloid::Actor.current) do |conn|
+    def retrieve_work(fetcher = nil)
+      work = Sidekiq.redis(fetcher || Celluloid::Actor.current) do |conn|
         conn.brpop(*queues_cmd)
       end
       UnitOfWork.new(*work) if work
