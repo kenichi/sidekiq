@@ -181,12 +181,18 @@ module Sidekiq
 
       def initialize(pool)
         @pool = pool
+        @index = 0
       end
 
       # disseminating *asynchronous* orders...
       #
       def method_missing(meth, *args, &block)
-        @pool.each { |fetcher| fetcher.async.__send__(meth, *args, &block) }
+        @pool[@index].async.__send__(meth, *args, &block)
+        increment_index
+      end
+
+      def increment_index
+        @index = (@index == (@pool.length - 1)) ? 0 : (@index + 1)
       end
 
     end
