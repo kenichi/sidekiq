@@ -22,10 +22,10 @@ class TestMultiFetch < Minitest::Test
     end
 
     it 'retreives from each redis' do
-      fetch = Sidekiq::MultiFetch.new(:queues => ['basic', 'bar'])
+      fetches = [0,1].map { |n| Sidekiq::MultiFetch.new(:fetcher => n, :queues => ['basic', 'bar']) }
       uow = nil
       [0,1].each do |n|
-        uow = fetch.retrieve_work n
+        uow = fetches[n].retrieve_work
         refute_nil uow
         assert_equal 'basic', uow.queue_name
         assert_equal "msg_#{n}", uow.message
