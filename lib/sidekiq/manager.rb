@@ -76,7 +76,7 @@ module Sidekiq
         else
           @ready << processor if processor.alive?
         end
-        dispatch
+        dispatch(processor)
       end
     end
 
@@ -97,7 +97,7 @@ module Sidekiq
       end
     end
 
-    def assign(work)
+    def assign(work, _fetcher = nil)
       watchdog("Manager#assign died") do
         if stopped?
           # Race condition between Manager#stop if Fetcher
@@ -107,6 +107,7 @@ module Sidekiq
           work.requeue
         else
           processor = @ready.pop
+          processor.fetcher = _fetcher if _fetcher
           @in_progress[processor.object_id] = work
           @busy << processor
           processor.async.process(work)
@@ -174,14 +175,20 @@ module Sidekiq
       end
     end
 
-    def dispatch
+    def dispatch(processor = nil)
       return if stopped?
       # This is a safety check to ensure we haven't leaked
       # processors somehow.
       raise "BUG: No processors, cannot continue!" if @ready.empty? && @busy.empty?
       raise "No ready processor!?" if @ready.empty?
 
-      @fetcher.async.fetch
+      if processor and processor.fetcher
+        _fetcher = processor.fetcher
+        processor.fetcher = nil
+        _fetcher.async.fetch
+      else
+        @fetcher.async.fetch
+      end
     end
 
     def stopped?

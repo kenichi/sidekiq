@@ -24,7 +24,7 @@ module Sidekiq
       end
     end
 
-    attr_accessor :proxy_id
+    attr_accessor :proxy_id, :fetcher
 
     def initialize(boss)
       @boss = boss

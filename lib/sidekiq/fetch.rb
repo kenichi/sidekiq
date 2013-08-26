@@ -15,7 +15,7 @@ module Sidekiq
     def initialize(mgr, options)
       @down = nil
       @mgr = mgr
-      @strategy = Fetcher.strategy.new(options.merge :fetcher => self)
+      @strategy = Fetcher.strategy.new(options.merge :fetcher => current_actor)
     end
 
     # Fetching is straightforward: the Manager makes a fetch
@@ -36,7 +36,7 @@ module Sidekiq
           @down = nil
 
           if work
-            @mgr.async.assign(work)
+            @mgr.async.assign(work, current_actor)
           else
             after(0) { fetch }
           end
@@ -83,10 +83,11 @@ module Sidekiq
       @strictly_ordered_queues = !!options[:strict]
       @queues = options[:queues].map { |q| "queue:#{q}" }
       @unique_queues = @queues.uniq
+      @fetcher = options[:fetcher]
     end
 
     def retrieve_work
-      work = Sidekiq.redis { |conn| conn.brpop(*queues_cmd) }
+      work = Sidekiq.redis(@fetcher) { |conn| conn.brpop(*queues_cmd) }
       UnitOfWork.new(*work) if work
     end
 
@@ -137,10 +138,8 @@ module Sidekiq
 
   class MultiFetch < BasicFetch
 
-    def retrieve_work(fetcher = nil)
-      work = Sidekiq.redis(fetcher || Celluloid::Actor.current) do |conn|
-        conn.brpop(*queues_cmd)
-      end
+    def retrieve_work
+      work = Sidekiq.redis(@fetcher) { |conn| conn.brpop(*queues_cmd) }
       UnitOfWork.new(*work) if work
     end
 
@@ -151,7 +150,7 @@ module Sidekiq
     attr_reader :pool
 
     def initialize(mgr, options)
-      options.merge!(:fetch => MultiFetch)
+      Sidekiq.options.merge! :fetch => MultiFetch
       @pool = Sidekiq.fetcher_pool_count.times.map do
         f = Fetcher.new(mgr, options)
 
@@ -181,6 +180,15 @@ module Sidekiq
 
       def initialize(pool)
         @pool = pool
+
+        mod = ::Sidekiq.options[:concurrency] % @pool.length
+        unless mod == 0
+          ::Sidekiq.logger.warn "multi_redis mode prefers options[:concurrency] values that are " +
+                                "evenly divisible by the number of redis instances configured"
+          ::Sidekiq.logger.warn "options[:concurrency] => #{options[:concurrency]}, " +
+                                "multi_redis count => #{@pool.length}"
+        end
+
         @index = 0
       end
 
@@ -188,11 +196,7 @@ module Sidekiq
       #
       def method_missing(meth, *args, &block)
         @pool[@index].async.__send__(meth, *args, &block)
-        increment_index
-      end
-
-      def increment_index
-        @index = (@index == (@pool.length - 1)) ? 0 : (@index + 1)
+        @index = @index == (@pool.length - 1) ? 0 : @index + 1
       end
 
     end
