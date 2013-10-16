@@ -4,7 +4,7 @@ require 'sidekiq/fetch'
 # NOTE - these tests require a redis running on both the default port 6379 and
 # another on port 6380. they should be completely independent of each other.
 
-class TestMultiFetch < Minitest::Test
+class TestMultiFetch < Sidekiq::Test
 
   describe 'multi_fetcher' do
 
