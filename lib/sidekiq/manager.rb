@@ -28,7 +28,6 @@ module Sidekiq
       @threads = {}
       @done = false
       @busy = []
-      @fetcher = Sidekiq.fetcher_class.new(current_actor, options)
       @ready = @count.times.map do
         p = Processor.new_link(current_actor)
         p.proxy_id = p.object_id

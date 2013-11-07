@@ -19,7 +19,7 @@ module Sidekiq
     def initialize(options)
       @manager = Sidekiq::Manager.new_link options
       @poller = Sidekiq::Scheduled::Poller.new_link
-      @fetcher = Sidekiq::Fetcher.new_link @manager, options
+      @fetcher = Sidekiq.fetcher_class.new @manager, options
       @manager.fetcher = @fetcher
       @done = false
       @options = options

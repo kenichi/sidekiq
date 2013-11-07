@@ -152,7 +152,7 @@ module Sidekiq
     def initialize(mgr, options)
       Sidekiq.options.merge! :fetch => MultiFetch
       @pool = Sidekiq.fetcher_pool_count.times.map do
-        f = Fetcher.new(mgr, options)
+        f = Fetcher.new_link(mgr, options)
 
         # make the redis connections now to avoid awkwardness later
         #
